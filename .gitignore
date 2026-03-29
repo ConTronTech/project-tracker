@@ -1,0 +1,17 @@
+# Build
+*.o
+project_api
+data/
+backups/
+
+# OS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+
+# Test configs
+config_test.env

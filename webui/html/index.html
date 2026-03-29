@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Tracker</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="sidebar">
+            <h1>Project Tracker <span class="logout-btn" id="logoutBtn">Logout</span></h1>
+            <div class="search">
+                <input type="text" id="search" placeholder="Search...">
+            </div>
+            <div class="project-list" id="projectList"></div>
+            <div class="sidebar-footer">
+                <button id="newProjectBtn">+ New Project</button>
+            </div>
+        </div>
+        <div class="main">
+            <div class="toolbar" id="toolbar" style="display:none">
+                <span class="title" id="toolbarTitle"></span>
+                <button id="newFileBtn">+ File</button>
+                <button id="importFileBtn">Import</button>
+                <button id="editProjectBtn">Edit</button>
+                <button class="danger" id="deleteProjectBtn">Delete</button>
+            </div>
+            <div class="tabs" id="tabs" style="display:none"></div>
+            <div class="content" id="content">
+                <div class="empty">Select a project</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Project Modal -->
+    <div class="modal-bg" id="newProjectModal">
+        <div class="modal">
+            <h3>New Project</h3>
+            <input id="np_slug" placeholder="slug (e.g. my_project)">
+            <input id="np_name" placeholder="Name">
+            <input id="np_tags" placeholder="Tags (comma separated)">
+            <input id="np_desc" placeholder="Description">
+            <input id="np_repo" placeholder="Repo path (optional)">
+            <select id="np_priority">
+                <option value="high">High</option>
+                <option value="medium" selected>Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <div class="btns">
+                <button class="cancel" data-close="newProjectModal">Cancel</button>
+                <button class="ok" id="createProjectBtn">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Project Modal -->
+    <div class="modal-bg" id="editProjectModal">
+        <div class="modal">
+            <h3>Edit Project</h3>
+            <label>Name</label>
+            <input id="ep_name" placeholder="Project name">
+            <label>Status</label>
+            <select id="ep_status">
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="completed">Completed</option>
+                <option value="abandoned">Abandoned</option>
+            </select>
+            <label>Priority</label>
+            <select id="ep_priority">
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+            </select>
+            <label>Tags</label>
+            <input id="ep_tags" placeholder="c++,sdl2,opengl">
+            <label>Description</label>
+            <input id="ep_desc" placeholder="Short description">
+            <label>Repo Path</label>
+            <input id="ep_repo" placeholder="/root/clawd/projects/...">
+            <div class="btns">
+                <button class="cancel" data-close="editProjectModal">Cancel</button>
+                <button class="ok" id="saveProjectBtn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New File Modal -->
+    <div class="modal-bg" id="newFileModal">
+        <div class="modal">
+            <h3>New File</h3>
+            <input id="nf_name" placeholder="Filename (e.g. README.md)">
+            <div id="nf_conflict" class="conflict-box" style="display:none">
+                <p><span id="nf_conflict_name"></span> already exists</p>
+                <div class="conflict-btns">
+                    <button id="conflictOverwrite" class="btn-danger">Overwrite</button>
+                    <button id="conflictCopy" class="btn-accent">Numbered Copy</button>
+                </div>
+            </div>
+            <div class="btns">
+                <button class="cancel" id="closeNewFileBtn">Cancel</button>
+                <button class="ok" id="createFileBtn">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/projects.js"></script>
+    <script src="/static/js/editor.js"></script>
+</body>
+</html>

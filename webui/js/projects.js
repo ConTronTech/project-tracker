@@ -1,0 +1,157 @@
+// Projects module — list, search, CRUD
+
+const Projects = {
+    async loadList() {
+        const q = document.getElementById('search').value;
+        const url = q ? `/projects?search=${encodeURIComponent(q)}` : '/projects';
+        const projects = await App.apiJson(url);
+        if (!projects) return;
+
+        const statusOrder = { completed: 0, active: 1, paused: 2, abandoned: 3 };
+        const prioOrder = { high: 0, medium: 1, low: 2 };
+        projects.sort((a, b) => {
+            const s = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+            if (s !== 0) return s;
+            return (prioOrder[a.priority] ?? 9) - (prioOrder[b.priority] ?? 9);
+        });
+
+        const list = document.getElementById('projectList');
+        list.innerHTML = projects.map(p => {
+            const tags = p.tags ? p.tags.split(',').filter(t => t.trim()).map(t =>
+                `<span class="tag-pill">${App.escapeHtml(t.trim())}</span>`
+            ).join('') : '';
+            return `
+            <div class="project-item ${p.slug === App.currentSlug ? 'active' : ''}"
+                 onclick="Projects.select('${App.escapeHtml(p.slug)}')">
+                <div class="name">${App.escapeHtml(p.name)} <span class="badge ${p.status}">${p.status}</span></div>
+                <div class="meta"><div class="tag-row">${tags}</div><span class="file-count">${p.file_count} files</span></div>
+            </div>`;
+        }).join('');
+    },
+
+    async select(slug) {
+        App.currentSlug = slug;
+        App.currentFile = null;
+        this.loadList();
+
+        const p = await App.apiJson(`/projects/${slug}`);
+        if (!p) return;
+
+        document.getElementById('toolbar').style.display = 'flex';
+        document.getElementById('toolbarTitle').textContent = p.name;
+
+        const tabs = document.getElementById('tabs');
+        tabs.style.display = 'flex';
+        tabs.innerHTML = `<div class="tab active" onclick="Projects.showInfo('${slug}')">Info</div>` +
+            p.files.map(f => `<div class="tab" onclick="Editor.openFile('${slug}','${App.escapeHtml(f.filename)}')">${App.escapeHtml(f.filename)}</div>`).join('');
+
+        this.showInfo(slug);
+    },
+
+    async showInfo(slug) {
+        const p = await App.apiJson(`/projects/${slug}`);
+        if (!p) return;
+        App.setActiveTab('Info');
+
+        document.getElementById('content').innerHTML = `
+            <div class="detail-grid">
+                <div class="detail-item"><label>Slug</label><div class="value">${App.escapeHtml(p.slug)}</div></div>
+                <div class="detail-item"><label>Status</label><div class="value"><span class="badge ${p.status}">${p.status}</span></div></div>
+                <div class="detail-item"><label>Priority</label><div class="value">${App.escapeHtml(p.priority)}</div></div>
+                <div class="detail-item"><label>Tags</label><div class="value">${App.escapeHtml(p.tags)}</div></div>
+                <div class="detail-item"><label>Description</label><div class="value">${App.escapeHtml(p.description)}</div></div>
+                <div class="detail-item"><label>Repo</label><div class="value">${App.escapeHtml(p.repo_path || 'N/A')}</div></div>
+                <div class="detail-item"><label>Created</label><div class="value">${App.escapeHtml(p.created_at)}</div></div>
+                <div class="detail-item"><label>Updated</label><div class="value">${App.escapeHtml(p.updated_at)}</div></div>
+            </div>
+            <h3 class="files-heading">Files (${p.files.length})</h3>
+            <div class="file-list">
+            ${p.files.map(f => `
+                <div class="file-item" onclick="Editor.openFile('${slug}','${App.escapeHtml(f.filename)}')">
+                    <span class="fname">${App.escapeHtml(f.filename)}</span>
+                    <span class="fsize">${f.size} bytes · ${App.escapeHtml(f.updated_at)}</span>
+                </div>
+            `).join('') || '<div style="color:#8a6b78">No files yet</div>'}
+            </div>
+        `;
+    },
+
+    async create() {
+        const body = {
+            slug: document.getElementById('np_slug').value.trim(),
+            name: document.getElementById('np_name').value.trim(),
+            tags: document.getElementById('np_tags').value.trim(),
+            description: document.getElementById('np_desc').value.trim(),
+            repo_path: document.getElementById('np_repo').value.trim(),
+            priority: document.getElementById('np_priority').value
+        };
+        if (!body.slug) return;
+
+        await App.api('/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        App.closeModal('newProjectModal');
+        // Clear inputs
+        ['np_slug', 'np_name', 'np_tags', 'np_desc', 'np_repo'].forEach(id =>
+            document.getElementById(id).value = ''
+        );
+        this.loadList();
+    },
+
+    async edit() {
+        const p = await App.apiJson(`/projects/${App.currentSlug}`);
+        if (!p) return;
+        document.getElementById('ep_name').value = p.name || '';
+        document.getElementById('ep_status').value = p.status || 'active';
+        document.getElementById('ep_priority').value = p.priority || 'medium';
+        document.getElementById('ep_tags').value = p.tags || '';
+        document.getElementById('ep_desc').value = p.description || '';
+        document.getElementById('ep_repo').value = p.repo_path || '';
+        App.showModal('editProjectModal');
+    },
+
+    async save() {
+        const body = {};
+        const fields = { name: 'ep_name', status: 'ep_status', priority: 'ep_priority',
+                         tags: 'ep_tags', description: 'ep_desc', repo_path: 'ep_repo' };
+        for (const [key, id] of Object.entries(fields)) {
+            const val = document.getElementById(id).value;
+            if (val) body[key] = val;
+        }
+
+        await App.api(`/projects/${App.currentSlug}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        App.closeModal('editProjectModal');
+        this.loadList();
+        this.select(App.currentSlug);
+    },
+
+    async remove() {
+        if (!confirm(`Delete ${App.currentSlug} and ALL its files?`)) return;
+
+        await App.api(`/projects/${App.currentSlug}`, { method: 'DELETE' });
+        App.currentSlug = null;
+        document.getElementById('toolbar').style.display = 'none';
+        document.getElementById('tabs').style.display = 'none';
+        document.getElementById('content').innerHTML = '<div class="empty">Select a project</div>';
+        this.loadList();
+    }
+};
+
+// Event bindings
+document.getElementById('search')?.addEventListener('input', () => Projects.loadList());
+document.getElementById('newProjectBtn')?.addEventListener('click', () => App.showModal('newProjectModal'));
+document.getElementById('createProjectBtn')?.addEventListener('click', () => Projects.create());
+document.getElementById('editProjectBtn')?.addEventListener('click', () => Projects.edit());
+document.getElementById('saveProjectBtn')?.addEventListener('click', () => Projects.save());
+document.getElementById('deleteProjectBtn')?.addEventListener('click', () => Projects.remove());
+
+// Initial load
+Projects.loadList();
