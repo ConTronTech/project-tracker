@@ -31,6 +31,9 @@ private:
     // Generate cryptographically random token
     static std::string generateToken();
 
+    // Clean expired sessions (no locking — caller must hold mutex)
+    void cleanExpiredSessionsUnlocked();
+
 public:
     Auth();
 

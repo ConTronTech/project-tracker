@@ -1,7 +1,7 @@
-DROP TABLE IF EXISTS files;
-DROP TABLE IF EXISTS projects;
+-- WARNING: Do not add DROP TABLE statements here.
+-- Use a separate migration script if you need to reset.
 
-CREATE TABLE projects (
+CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     slug TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE projects (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE files (
+CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER NOT NULL,
     filename TEXT NOT NULL,
@@ -26,9 +26,9 @@ CREATE TABLE files (
     UNIQUE(project_id, filename)
 );
 
-CREATE INDEX idx_slug ON projects(slug);
-CREATE INDEX idx_status ON projects(status);
-CREATE INDEX idx_files ON files(project_id, filename);
+CREATE INDEX IF NOT EXISTS idx_slug ON projects(slug);
+CREATE INDEX IF NOT EXISTS idx_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_files ON files(project_id, filename);
 
 INSERT INTO projects (slug, name, status, priority, tags, description, repo_path) VALUES
 ('space_game', 'Space Game', 'active', 'high', 'c++,sdl2,opengl', '6DOF space exploration game', '/root/clawd/projects/space-game/'),

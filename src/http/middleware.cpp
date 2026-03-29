@@ -75,12 +75,6 @@ void SecurityMiddleware::before_handle(crow::request& req, crow::response& res, 
             bool originOk = false;
             std::string checkUrl = origin.empty() ? referer : origin;
             
-            // Same-origin is always ok
-            if (checkUrl.find("://localhost") != std::string::npos ||
-                checkUrl.find("://127.0.0.1") != std::string::npos) {
-                originOk = true;
-            }
-            
             // Check against CORS origins
             for (const auto& o : s_cors_origins) {
                 if (checkUrl.find(o) == 0) { originOk = true; break; }
@@ -160,9 +154,11 @@ void addSecurityHeaders(crow::response& res) {
     res.add_header("X-Content-Type-Options", "nosniff");
     res.add_header("X-Frame-Options", "DENY");
     res.add_header("X-XSS-Protection", "1; mode=block");
-    res.add_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    // HSTS handled by nginx TLS termination — not set here (ignored on plain HTTP anyway)
     res.add_header("Referrer-Policy", "strict-origin-when-cross-origin");
-    res.add_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'");
+    // Note: script-src needs 'unsafe-inline' because WebUI uses onclick handlers in
+    // dynamically generated HTML. TODO: refactor to addEventListener to drop unsafe-inline.
+    res.add_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com");
 }
 
 crow::response jsonError(int code, const std::string& message) {

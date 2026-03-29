@@ -81,7 +81,7 @@ std::string Auth::createSession(const std::string& clientIp) {
 
     // Enforce max sessions
     if (sessions_.size() >= max_sessions_) {
-        cleanExpiredSessions();
+        cleanExpiredSessionsUnlocked();
         // If still at max, reject
         if (sessions_.size() >= max_sessions_) {
             utils::Logger::get_instance().warn("Max sessions reached, rejecting new session from " + clientIp);
@@ -144,8 +144,8 @@ void Auth::destroySession(const std::string& token) {
     }
 }
 
-void Auth::cleanExpiredSessions() {
-    // Note: caller must hold mutex if called internally
+void Auth::cleanExpiredSessionsUnlocked() {
+    // Internal: caller MUST hold session_mutex_
     auto now = std::chrono::steady_clock::now();
     size_t removed = 0;
 
@@ -164,6 +164,11 @@ void Auth::cleanExpiredSessions() {
         utils::Logger::get_instance().info("Cleaned " + std::to_string(removed) +
             " expired sessions (active: " + std::to_string(sessions_.size()) + ")");
     }
+}
+
+void Auth::cleanExpiredSessions() {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    cleanExpiredSessionsUnlocked();
 }
 
 size_t Auth::getSessionCount() const {
