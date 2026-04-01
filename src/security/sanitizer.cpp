@@ -132,7 +132,7 @@ bool Sanitizer::isCleanString(const std::string& s, size_t maxLen) {
 }
 
 bool Sanitizer::isValidStatus(const std::string& s) {
-    return s == "active" || s == "paused" || s == "completed" || s == "abandoned";
+    return s == "active" || s == "paused" || s == "completed" || s == "abandoned" || s == "archived";
 }
 
 bool Sanitizer::isValidPriority(const std::string& s) {

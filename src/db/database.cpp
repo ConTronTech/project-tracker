@@ -98,6 +98,10 @@ std::vector<Project> ProjectDB::getAll(const std::string& search,
         if (!status.empty()) {
             sql += " AND p.status = ?";
             params.push_back(status);
+        } else {
+            // By default, exclude archived projects from listings
+            // Use ?status=archived to explicitly list them
+            sql += " AND p.status != 'archived'";
         }
 
         sql += " ORDER BY p.updated_at DESC";
