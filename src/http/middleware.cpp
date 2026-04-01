@@ -1,5 +1,6 @@
 #include "http/middleware.h"
 #include "utils/logger.h"
+#include <nlohmann/json.hpp>
 #include <sstream>
 
 namespace http {
@@ -164,7 +165,10 @@ void addSecurityHeaders(crow::response& res) {
 crow::response jsonError(int code, const std::string& message) {
     crow::response res(code);
     res.add_header("Content-Type", "application/json");
-    res.write("{\"error\":\"" + message + "\"}");
+    // Use nlohmann::json to properly escape special characters in message
+    // Prevents broken JSON from quotes, backslashes, or control chars in error text
+    nlohmann::json j = {{"error", message}};
+    res.write(j.dump());
     return res;
 }
 

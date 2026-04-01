@@ -48,8 +48,9 @@ ProjectDB::ProjectDB(const std::string& dbPath) : dbPath_(dbPath) {
 }
 
 // ==== Internal: get project ID by slug (parameterized) ====
+// CALLER MUST HOLD LOCK (shared or exclusive)
 
-int ProjectDB::getProjectId(const std::string& slug) {
+int ProjectDB::getProjectIdUnlocked(const std::string& slug) {
     try {
         SQLite::Database db(dbPath_, SQLite::OPEN_READONLY);
         SQLite::Statement q(db, "SELECT id FROM projects WHERE slug = ?");
@@ -63,11 +64,12 @@ int ProjectDB::getProjectId(const std::string& slug) {
     return -1;
 }
 
-// ==== Projects ====
+// ==== Projects (READ — shared lock) ====
 
 std::vector<Project> ProjectDB::getAll(const std::string& search,
                                         const std::string& status,
                                         int limit, int offset) {
+    std::shared_lock lock(db_mutex_);
     std::vector<Project> out;
 
     try {
@@ -139,6 +141,8 @@ std::vector<Project> ProjectDB::getAll(const std::string& search,
 }
 
 Project ProjectDB::getBySlug(const std::string& slug) {
+    std::shared_lock lock(db_mutex_);
+
     try {
         SQLite::Database db(dbPath_, SQLite::OPEN_READONLY);
         SQLite::Statement q(db, R"(
@@ -161,7 +165,19 @@ Project ProjectDB::getBySlug(const std::string& slug) {
         p.repo_path = q.getColumn(7).getText();
         p.created_at = q.getColumn(8).getText();
         p.updated_at = q.getColumn(9).getText();
-        p.files = listFiles(slug);
+
+        // listFiles needs its own lock — but we hold shared already,
+        // so call the unlocked internal version
+        int id = p.id;
+        SQLite::Statement fq(db, "SELECT filename, size, updated_at FROM files WHERE project_id = ? ORDER BY filename");
+        fq.bind(1, id);
+        while (fq.executeStep()) {
+            FileInfo f;
+            f.filename = fq.getColumn(0).getText();
+            f.size = fq.getColumn(1).getInt();
+            f.updated_at = fq.getColumn(2).getText();
+            p.files.push_back(f);
+        }
         p.file_count = static_cast<int>(p.files.size());
         return p;
     } catch (const std::exception& e) {
@@ -170,7 +186,11 @@ Project ProjectDB::getBySlug(const std::string& slug) {
     return Project{};
 }
 
+// ==== Projects (WRITE — exclusive lock) ====
+
 bool ProjectDB::create(const Project& p) {
+    std::unique_lock lock(db_mutex_);
+
     try {
         SQLite::Database db(dbPath_, SQLite::OPEN_READWRITE);
         SQLite::Statement q(db, R"(
@@ -192,20 +212,24 @@ bool ProjectDB::create(const Project& p) {
 }
 
 bool ProjectDB::update(const std::string& slug, const json& fields) {
+    std::unique_lock lock(db_mutex_);
+
     try {
-        // Get current values first
-        auto current = getBySlug(slug);
-        if (current.slug.empty()) return false;
-
+        // Read current values under same exclusive lock — no TOCTOU
         SQLite::Database db(dbPath_, SQLite::OPEN_READWRITE);
-        SQLite::Statement q(db, R"(
-            UPDATE projects SET
-                name = ?, status = ?, priority = ?, tags = ?,
-                description = ?, repo_path = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE slug = ?
-        )");
 
-        // Use provided value or keep current
+        // First check project exists
+        SQLite::Statement check(db, "SELECT name, status, priority, tags, description, repo_path FROM projects WHERE slug = ?");
+        check.bind(1, slug);
+        if (!check.executeStep()) return false;
+
+        std::string cur_name = check.getColumn(0).getText();
+        std::string cur_status = check.getColumn(1).getText();
+        std::string cur_priority = check.getColumn(2).getText();
+        std::string cur_tags = check.getColumn(3).getText();
+        std::string cur_description = check.getColumn(4).getText();
+        std::string cur_repo_path = check.getColumn(5).getText();
+
         auto getField = [&](const std::string& key, const std::string& current_val) -> std::string {
             if (fields.contains(key) && fields[key].is_string()) {
                 std::string val = fields[key].get<std::string>();
@@ -214,12 +238,19 @@ bool ProjectDB::update(const std::string& slug, const json& fields) {
             return current_val;
         };
 
-        q.bind(1, getField("name", current.name));
-        q.bind(2, getField("status", current.status));
-        q.bind(3, getField("priority", current.priority));
-        q.bind(4, getField("tags", current.tags));
-        q.bind(5, getField("description", current.description));
-        q.bind(6, getField("repo_path", current.repo_path));
+        SQLite::Statement q(db, R"(
+            UPDATE projects SET
+                name = ?, status = ?, priority = ?, tags = ?,
+                description = ?, repo_path = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE slug = ?
+        )");
+
+        q.bind(1, getField("name", cur_name));
+        q.bind(2, getField("status", cur_status));
+        q.bind(3, getField("priority", cur_priority));
+        q.bind(4, getField("tags", cur_tags));
+        q.bind(5, getField("description", cur_description));
+        q.bind(6, getField("repo_path", cur_repo_path));
         q.bind(7, slug);
 
         return q.exec() > 0;
@@ -230,32 +261,39 @@ bool ProjectDB::update(const std::string& slug, const json& fields) {
 }
 
 bool ProjectDB::remove(const std::string& slug) {
+    std::unique_lock lock(db_mutex_);
+
     try {
-        int id = getProjectId(slug);
+        int id = getProjectIdUnlocked(slug);
         if (id < 0) return false;
 
         SQLite::Database db(dbPath_, SQLite::OPEN_READWRITE);
 
-        // Delete files first (parameterized)
+        // Use transaction for atomicity — both deletes succeed or neither does
+        SQLite::Transaction transaction(db);
+
         SQLite::Statement delFiles(db, "DELETE FROM files WHERE project_id = ?");
         delFiles.bind(1, id);
         delFiles.exec();
 
-        // Delete project (parameterized)
         SQLite::Statement delProject(db, "DELETE FROM projects WHERE id = ?");
         delProject.bind(1, id);
-        return delProject.exec() > 0;
+        bool ok = delProject.exec() > 0;
+
+        transaction.commit();
+        return ok;
     } catch (const std::exception& e) {
         utils::Logger::get_instance().error("remove: " + std::string(e.what()));
         return false;
     }
 }
 
-// ==== Files ====
+// ==== Files (READ — shared lock) ====
 
 std::vector<FileInfo> ProjectDB::listFiles(const std::string& slug) {
+    std::shared_lock lock(db_mutex_);
     std::vector<FileInfo> out;
-    int id = getProjectId(slug);
+    int id = getProjectIdUnlocked(slug);
     if (id < 0) return out;
 
     try {
@@ -278,7 +316,8 @@ std::vector<FileInfo> ProjectDB::listFiles(const std::string& slug) {
 }
 
 std::vector<uint8_t> ProjectDB::getFile(const std::string& slug, const std::string& filename) {
-    int id = getProjectId(slug);
+    std::shared_lock lock(db_mutex_);
+    int id = getProjectIdUnlocked(slug);
     if (id < 0) return {};
 
     try {
@@ -305,9 +344,12 @@ std::vector<uint8_t> ProjectDB::getFile(const std::string& slug, const std::stri
     return {};
 }
 
+// ==== Files (WRITE — exclusive lock) ====
+
 bool ProjectDB::putFile(const std::string& slug, const std::string& filename,
                          const void* data, int size) {
-    int id = getProjectId(slug);
+    std::unique_lock lock(db_mutex_);
+    int id = getProjectIdUnlocked(slug);
     if (id < 0) return false;
 
     try {
@@ -331,7 +373,8 @@ bool ProjectDB::putFile(const std::string& slug, const std::string& filename,
 }
 
 bool ProjectDB::deleteFile(const std::string& slug, const std::string& filename) {
-    int id = getProjectId(slug);
+    std::unique_lock lock(db_mutex_);
+    int id = getProjectIdUnlocked(slug);
     if (id < 0) return false;
 
     try {
@@ -346,10 +389,42 @@ bool ProjectDB::deleteFile(const std::string& slug, const std::string& filename)
     }
 }
 
+// ==== Files (READ-MODIFY-WRITE — exclusive lock, atomic) ====
+
 bool ProjectDB::patchFile(const std::string& slug, const std::string& filename,
                            const json& patch) {
-    // Get current content
-    auto data = getFile(slug, filename);
+    std::unique_lock lock(db_mutex_);
+
+    // Entire read-modify-write is atomic under exclusive lock
+    // No other thread can read stale data or interleave a write
+
+    int id = getProjectIdUnlocked(slug);
+    if (id < 0) return false;
+
+    // Read current content
+    std::vector<uint8_t> data;
+    try {
+        SQLite::Database rdb(dbPath_, SQLite::OPEN_READONLY);
+        SQLite::Statement q(rdb, "SELECT content FROM files WHERE project_id = ? AND filename = ?");
+        q.bind(1, id);
+        q.bind(2, filename);
+
+        if (q.executeStep()) {
+            SQLite::Column col = q.getColumn(0);
+            if (!col.isNull()) {
+                const void* blob = col.getBlob();
+                int sz = col.getBytes();
+                data.assign(
+                    static_cast<const uint8_t*>(blob),
+                    static_cast<const uint8_t*>(blob) + sz
+                );
+            }
+        }
+    } catch (const std::exception& e) {
+        utils::Logger::get_instance().error("patchFile read: " + std::string(e.what()));
+        return false;
+    }
+
     if (data.empty()) return false;
 
     std::string content(reinterpret_cast<char*>(data.data()), data.size());
@@ -421,7 +496,7 @@ bool ProjectDB::patchFile(const std::string& slug, const std::string& filename,
 
     if (!ok) return false;
 
-    // Rejoin and save
+    // Rejoin and save — still under exclusive lock
     std::string result;
     for (size_t i = 0; i < lines.size(); i++) {
         if (i > 0) result += "\n";
@@ -429,5 +504,23 @@ bool ProjectDB::patchFile(const std::string& slug, const std::string& filename,
     }
     result += "\n";
 
-    return putFile(slug, filename, result.data(), static_cast<int>(result.size()));
+    // Write back using same lock scope
+    try {
+        SQLite::Database wdb(dbPath_, SQLite::OPEN_READWRITE);
+        SQLite::Statement q(wdb, R"(
+            INSERT INTO files(project_id, filename, content, size)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(project_id, filename)
+            DO UPDATE SET content = excluded.content, size = excluded.size,
+                         updated_at = CURRENT_TIMESTAMP
+        )");
+        q.bind(1, id);
+        q.bind(2, filename);
+        q.bind(3, result.data(), static_cast<int>(result.size()));
+        q.bind(4, static_cast<int>(result.size()));
+        return q.exec() > 0;
+    } catch (const std::exception& e) {
+        utils::Logger::get_instance().error("patchFile write: " + std::string(e.what()));
+        return false;
+    }
 }
