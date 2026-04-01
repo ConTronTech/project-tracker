@@ -93,7 +93,7 @@ std::string Auth::createSession(const std::string& clientIp) {
     session.token = generateToken();
     session.client_ip = clientIp;
     session.created = std::chrono::steady_clock::now();
-    session.touch();  // Set last_activity atomically
+    session.last_activity = std::chrono::steady_clock::now();
     session.authenticated = true;
 
     std::string token = session.token;  // Copy before move
@@ -117,7 +117,7 @@ bool Auth::validateSession(const std::string& token, const std::string& clientIp
 
     // Check expiry
     auto now = std::chrono::steady_clock::now();
-    auto age = std::chrono::duration_cast<std::chrono::seconds>(now - session.lastActivity());
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(now - session.last_activity);
     if (age > session_timeout_) {
         return false;
     }
@@ -129,8 +129,8 @@ bool Auth::validateSession(const std::string& token, const std::string& clientIp
         return false;
     }
 
-    // Update last activity — no more const_cast UB
-    session.touch();
+    // Update last activity — method is non-const now, no UB
+    session.last_activity = now;
 
     return session.authenticated;
 }
@@ -152,7 +152,7 @@ void Auth::cleanExpiredSessionsUnlocked() {
 
     for (auto it = sessions_.begin(); it != sessions_.end();) {
         auto age = std::chrono::duration_cast<std::chrono::seconds>(
-            now - it->second.lastActivity());
+            now - it->second.last_activity);
         if (age > session_timeout_) {
             it = sessions_.erase(it);
             removed++;

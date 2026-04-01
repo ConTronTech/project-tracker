@@ -4,7 +4,6 @@
 #include <unordered_map>
 #include <mutex>
 #include <chrono>
-#include <atomic>
 
 namespace security {
 
@@ -12,32 +11,31 @@ struct Session {
     std::string token;
     std::string client_ip;
     std::chrono::steady_clock::time_point created;
-    std::atomic<std::chrono::steady_clock::time_point::rep> last_activity_raw;
+    std::chrono::steady_clock::time_point last_activity;
     bool authenticated;
 
-    Session() : authenticated(false) {
-        last_activity_raw.store(
-            std::chrono::steady_clock::now().time_since_epoch().count(),
-            std::memory_order_relaxed
-        );
+    Session() : authenticated(false), last_activity(std::chrono::steady_clock::now()) {}
+
+    // Move constructor/assignment (needed for unordered_map)
+    Session(Session&& o) noexcept
+        : token(std::move(o.token))
+        , client_ip(std::move(o.client_ip))
+        , created(o.created)
+        , last_activity(o.last_activity)
+        , authenticated(o.authenticated) {}
+
+    Session& operator=(Session&& o) noexcept {
+        token = std::move(o.token);
+        client_ip = std::move(o.client_ip);
+        created = o.created;
+        last_activity = o.last_activity;
+        authenticated = o.authenticated;
+        return *this;
     }
 
-    // Convenience: get last_activity as time_point
-    std::chrono::steady_clock::time_point lastActivity() const {
-        return std::chrono::steady_clock::time_point(
-            std::chrono::steady_clock::duration(
-                last_activity_raw.load(std::memory_order_relaxed)
-            )
-        );
-    }
-
-    // Convenience: touch last activity — thread-safe without mutex
-    void touch() {
-        last_activity_raw.store(
-            std::chrono::steady_clock::now().time_since_epoch().count(),
-            std::memory_order_relaxed
-        );
-    }
+    // No copy (sessions are unique)
+    Session(const Session&) = delete;
+    Session& operator=(const Session&) = delete;
 };
 
 class Auth {
