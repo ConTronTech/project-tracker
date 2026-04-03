@@ -149,25 +149,55 @@ const Projects = {
         const p = await App.apiJson(`/projects/${App.currentSlug}`);
         if (!p) return;
 
-        const newStatus = p.status === 'archived' ? 'active' : 'archived';
-        const action = newStatus === 'archived' ? 'Archive' : 'Unarchive';
-        if (!confirm(`${action} ${p.name}?`)) return;
+        const isArchiving = p.status !== 'archived';
+        const newStatus = isArchiving ? 'archived' : 'active';
 
-        await App.api(`/projects/${App.currentSlug}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
-        });
+        // Update modal content
+        const icon = document.getElementById('archiveModalIcon');
+        const title = document.getElementById('archiveModalTitle');
+        const name = document.getElementById('archiveModalName');
+        const hint = document.getElementById('archiveModalHint');
+        const btn = document.getElementById('archiveConfirmBtn');
 
-        // If we just archived and the toggle is off, enable it so user can still see the project
-        if (newStatus === 'archived') {
-            const toggle = document.getElementById('showArchived');
-            if (toggle && !toggle.checked) toggle.checked = true;
+        if (isArchiving) {
+            icon.textContent = '📦';
+            title.textContent = 'Archive Project';
+            hint.textContent = 'Archived projects are hidden from the main list but can be restored anytime.';
+            btn.textContent = 'Archive';
+            btn.className = 'ok archive-confirm-btn archiving';
+        } else {
+            icon.textContent = '📂';
+            title.textContent = 'Restore Project';
+            hint.textContent = 'This will move the project back to the active list.';
+            btn.textContent = 'Restore';
+            btn.className = 'ok archive-confirm-btn unarchiving';
         }
+        name.textContent = p.name;
 
-        this.loadList();
-        this.select(App.currentSlug);
-        this.updateArchiveButton(newStatus);
+        // Show modal and wait for confirm
+        App.showModal('archiveModal');
+
+        // Set up one-time click handler for confirm
+        const confirmHandler = async () => {
+            btn.removeEventListener('click', confirmHandler);
+            App.closeModal('archiveModal');
+
+            await App.api(`/projects/${App.currentSlug}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus })
+            });
+
+            if (newStatus === 'archived') {
+                const toggle = document.getElementById('showArchived');
+                if (toggle && !toggle.checked) toggle.checked = true;
+            }
+
+            this.loadList();
+            this.select(App.currentSlug);
+            this.updateArchiveButton(newStatus);
+        };
+        btn.addEventListener('click', confirmHandler);
     },
 
     updateArchiveButton(status) {

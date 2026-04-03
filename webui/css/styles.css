@@ -362,5 +362,31 @@ button.unarchive {
 }
 button.unarchive:hover { background: var(--accent-glow); }
 
+/* ===== Archive Modal ===== */
+.archive-modal {
+    text-align: center; max-width: 380px;
+}
+.archive-modal-icon {
+    font-size: 48px; margin-bottom: 12px;
+    filter: grayscale(0.2);
+}
+.archive-modal-text {
+    font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5;
+}
+.archive-modal-text strong {
+    color: var(--text-primary); font-weight: 600;
+}
+.archive-modal-hint {
+    font-size: 11px; color: var(--text-muted); margin-bottom: 20px;
+    padding: 10px 14px; background: var(--bg-base); border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+}
+.archive-confirm-btn.archiving {
+    background: var(--amber) !important; color: #000 !important;
+}
+.archive-confirm-btn.unarchiving {
+    background: var(--green) !important; color: #000 !important;
+}
+
 /* ===== Transitions ===== */
 * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }

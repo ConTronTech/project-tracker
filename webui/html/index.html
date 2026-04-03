@@ -112,6 +112,24 @@
         </div>
     </div>
 
+    <!-- Archive Confirm Modal -->
+    <div class="modal-bg" id="archiveModal">
+        <div class="modal archive-modal">
+            <div class="archive-modal-icon" id="archiveModalIcon">📦</div>
+            <h3 id="archiveModalTitle">Archive Project</h3>
+            <p class="archive-modal-text" id="archiveModalText">
+                Are you sure you want to archive <strong id="archiveModalName"></strong>?
+            </p>
+            <p class="archive-modal-hint" id="archiveModalHint">
+                Archived projects are hidden from the main list but can be restored anytime.
+            </p>
+            <div class="btns">
+                <button class="cancel" data-close="archiveModal">Cancel</button>
+                <button class="ok archive-confirm-btn" id="archiveConfirmBtn">Archive</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/app.js"></script>
     <script src="/static/js/projects.js"></script>
     <script src="/static/js/editor.js"></script>
