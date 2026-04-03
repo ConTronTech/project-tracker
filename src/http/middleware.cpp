@@ -159,7 +159,7 @@ void addSecurityHeaders(crow::response& res) {
     res.add_header("Referrer-Policy", "strict-origin-when-cross-origin");
     // Note: script-src needs 'unsafe-inline' because WebUI uses onclick handlers in
     // dynamically generated HTML. TODO: refactor to addEventListener to drop unsafe-inline.
-    res.add_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com");
+    res.add_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'");
 }
 
 crow::response jsonError(int code, const std::string& message) {
