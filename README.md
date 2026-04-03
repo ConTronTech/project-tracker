@@ -6,8 +6,11 @@ A secure, self-hosted project and file management API with a modern WebUI. Built
 
 - **Full REST API** for projects, files, and search
 - **Session-based WebUI** with modern dark theme (pink/black/red)
-- **Security-first design**: rate limiting, CSRF protection, CORS lockdown, parameterized SQL
+- **Security-first design**: rate limiting, CSP, CSRF protection, CORS lockdown, parameterized SQL
 - **API key authentication** for scripts/agents + session cookies for browsers
+- **Thread-safe concurrency** — `std::shared_mutex` for read-many/write-one operations
+- **Project archiving** — archive/restore projects with themed confirmation UI
+- **File management** — create, edit, patch (line ops, find/replace, append), import, delete
 - **Zero external dependencies** beyond Crow (header-only) and SQLiteCpp
 
 ## Quick Start
@@ -20,7 +23,7 @@ cd project-tracker
 make
 ```
 
-Requires: `g++` (C++17), `make`, `pthread`, SQLite3 development headers.
+Requires: `g++` (C++17), `make`, `libasio-dev`, `pthread`, SQLite3 development headers.
 
 ### 2. Configure
 
@@ -90,50 +93,59 @@ The WebUI will be at `http://localhost:8080/login`.
 
 ### Authentication
 
-All API endpoints require the `X-API-Key` header, except:
-- `GET /api/files/{slug}/{filename}` (reads are public)
-- WebUI routes (use session cookies)
+Write endpoints require the `X-API-Key` header. Read endpoints are public.
+WebUI uses session cookies (HttpOnly, SameSite=Strict).
 
 ### Projects
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/projects` | List all projects |
-| `GET` | `/api/projects/{slug}` | Get project details |
-| `POST` | `/api/projects` | Create project |
-| `PUT` | `/api/projects/{slug}` | Update project |
-| `DELETE` | `/api/projects/{slug}` | Delete project |
+| `GET` | `/api/projects` | List projects (excludes archived by default) |
+| `GET` | `/api/projects?status=all` | List all projects including archived |
+| `GET` | `/api/projects?status=archived` | List only archived projects |
+| `GET` | `/api/projects?search=query` | Search projects by name/tags/description |
+| `GET` | `/api/projects/{slug}` | Get project details + file list |
+| `POST` | `/api/projects` | Create project (auth required) |
+| `PUT` | `/api/projects/{slug}` | Update project (auth required) |
+| `DELETE` | `/api/projects/{slug}` | Delete project + all files (auth required) |
 
-**Project JSON:**
+**Create/Update JSON:**
 ```json
 {
   "slug": "my-project",
   "name": "My Project",
   "status": "active",
+  "priority": "high",
   "tags": "c++,web,api",
-  "description": "A cool project"
+  "description": "A cool project",
+  "repo_path": "/path/to/repo"
 }
 ```
 
-Valid statuses: `active`, `paused`, `completed`, `abandoned`
+Valid statuses: `active`, `paused`, `completed`, `abandoned`, `archived`
+Valid priorities: `high`, `medium`, `low`
 
 ### Files
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/files/{slug}` | List files in project |
-| `GET` | `/api/files/{slug}/{filename}` | Read file content (public) |
-| `POST` | `/api/files/{slug}/{filename}` | Create/update file |
-| `DELETE` | `/api/files/{slug}/{filename}` | Delete file |
-| `GET` | `/api/files/{slug}/{filename}/download` | Download file as attachment |
+| `GET` | `/api/projects/{slug}/files/{filename}` | Read file content |
+| `GET` | `/api/projects/{slug}/files/{filename}?from=1&to=10` | Read specific lines |
+| `PUT` | `/api/projects/{slug}/files/{filename}` | Create/overwrite file (auth) |
+| `PATCH` | `/api/projects/{slug}/files/{filename}` | Patch file (auth) |
+| `DELETE` | `/api/projects/{slug}/files/{filename}` | Delete file (auth) |
 
-### Search
+**Patch Operations:**
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/search?q={query}` | Search projects and files |
+| Operation | Body | Description |
+|-----------|------|-------------|
+| `replace_line` | `{"op":"replace_line","line":5,"content":"new text"}` | Replace line N |
+| `insert_line` | `{"op":"insert_line","line":5,"content":"new text"}` | Insert after line N |
+| `delete_line` | `{"op":"delete_line","line":5}` | Delete line N |
+| `append` | `{"op":"append","content":"text"}` | Append to end |
+| `find_replace` | `{"op":"find_replace","find":"old","with":"new"}` | Find and replace |
 
-### WebUI
+### WebUI Routes
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -141,19 +153,35 @@ Valid statuses: `active`, `paused`, `completed`, `abandoned`
 | `POST` | `/webui/login` | Authenticate (returns session cookie) |
 | `POST` | `/webui/logout` | End session |
 | `GET` | `/` | Main app (redirects to `/login` if not authenticated) |
-| `GET` | `/css/styles.css` | Stylesheet |
-| `GET` | `/js/app.js` | Main JS |
+| `GET` | `/static/css/{file}` | Stylesheets |
+| `GET` | `/static/js/{file}` | JavaScript |
+
+## WebUI Features
+
+- **Dark theme** with pink/red accents
+- **Project sidebar** with search and status badges
+- **File editor** with syntax-aware editing
+- **Archive toggle** — show/hide archived projects
+- **Archive/Restore** — themed confirmation modal with context-aware UI
+- **New Project/File modals** — inline creation
+- **Edit project** — status, priority, tags, description, repo path
+- **File import** — drag and drop or file picker
+- **Conflict detection** — warns on overwrite, offers numbered copy
+- **Keyboard shortcuts** — Escape closes modals
 
 ## Docker
 
-Build and run with Docker:
+### Build and Run
 
 ```bash
 docker build -t project-tracker .
 docker run -d \
+  --name project_tracker \
+  --restart unless-stopped \
   -p 8080:8080 \
   -e PROJECT_API_KEY=your-secret-key \
-  -v /path/to/data:/app/data \
+  -v pt_data:/app/data \
+  -v pt_backups:/app/backups \
   project-tracker
 ```
 
@@ -169,52 +197,128 @@ services:
     environment:
       - PROJECT_API_KEY=your-secret-key
     volumes:
-      - ./data:/app/data
+      - pt_data:/app/data
+      - pt_backups:/app/backups
     restart: unless-stopped
+
+volumes:
+  pt_data:
+  pt_backups:
 ```
 
-## Security Features
+### Backups
 
-- **Parameterized SQL queries** — All database queries use bound parameters, preventing SQL injection
-- **Rate limiting** — Configurable per-IP limits with burst allowance
-- **CSRF protection** — Browser requests verified against Origin/Referer headers
-- **CORS lockdown** — Whitelist-based allowed origins
-- **Constant-time API key comparison** — Prevents timing attacks
-- **Input validation** — Slugs, filenames, and body sizes validated
-- **Security headers** — CSP, HSTS, X-Frame-Options, X-Content-Type-Options
-- **Session binding** — Sessions can be bound to client IP
+The container automatically creates a timestamped SQLite backup on every startup with 7-day retention:
+```
+/app/backups/projects_20260403_153000.db
+```
 
-## Development
+## Security
 
-### Project Structure
+### Authentication & Sessions
+- **API key auth** — `X-API-Key` header for programmatic access
+- **Session cookies** — `HttpOnly; SameSite=Strict` for WebUI
+- **Constant-time comparison** — prevents timing attacks on API key validation
+- **IP-bound sessions** — sessions tied to client IP (configurable)
+- **Periodic session cleanup** — background timer purges expired sessions every 5 minutes
+- **Max concurrent sessions** — configurable limit (default 50)
+
+### Concurrency & Thread Safety
+- **`std::shared_mutex`** on database — read ops use `shared_lock`, write ops use `unique_lock`
+- **Atomic patch operations** — entire read-modify-write under exclusive lock (TOCTOU fix)
+- **SQLite transactions** — atomic cascading deletes
+- **Move-only session semantics** — no accidental copies
+
+### Input Validation
+- **Parameterized SQL** — all queries use bound parameters, zero SQL injection surface
+- **Slug validation** — alphanumeric + hyphens/underscores only
+- **Filename validation** — no path traversal, no null bytes, no control chars
+- **Body size limits** — configurable max request size
+- **Status/priority sanitization** — whitelist-only values accepted
+
+### HTTP Security
+- **Content-Security-Policy** — `script-src 'self'` (no inline scripts), locked down sources
+- **X-Frame-Options: DENY** — no iframe embedding
+- **X-Content-Type-Options: nosniff** — no MIME sniffing
+- **X-XSS-Protection: 1; mode=block** — XSS filter enabled
+- **CSRF protection** — SameSite cookies + Origin/Referer verification
+- **CORS lockdown** — whitelist-based allowed origins
+- **Rate limiting** — token bucket per IP with configurable burst and auto-ban
+- **Header injection prevention** — headers with CRLF are stripped
+- **JSON escaping** — `nlohmann::json::dump()` for safe output
+- **Path traversal blocked** — `std::filesystem::canonical()` on all static file paths
+
+## Architecture
 
 ```
-project_api_v2/
-├── include/           # Header files
-│   ├── core/         # Config, logging
-│   ├── db/           # Database, models
-│   ├── http/         # Middleware
-│   ├── routes/       # API endpoints
-│   ├── security/     # Auth, rate limiting, validation
-│   └── utils/        # String utilities
-├── src/              # Implementation
-├── webui/            # Frontend
+project-tracker/
+├── include/
+│   ├── core/
+│   │   ├── config.h              # Singleton .env parser
+│   │   └── logging.h             # Structured logger with levels
+│   ├── db/
+│   │   └── database.h            # SQLite wrapper with shared_mutex
+│   ├── http/
+│   │   └── middleware.h           # Security headers, CORS, CSRF, rate limit hooks
+│   ├── routes/
+│   │   ├── api.h                 # REST API routes (projects, files, search)
+│   │   └── webui.h               # WebUI routes (login, static files, sessions)
+│   └── security/
+│       ├── auth.h                # API key + session management
+│       ├── rate_limiter.h        # Token bucket rate limiter with auto-ban
+│       └── sanitizer.h           # Input validation (slugs, filenames, statuses)
+├── src/                          # Matching .cpp implementations
+│   ├── main.cpp                  # Entry point, signal handling, graceful shutdown
+│   ├── core/
+│   ├── db/
+│   ├── http/
+│   ├── routes/
+│   └── security/
+├── webui/
 │   ├── html/
+│   │   ├── index.html            # Main app shell
+│   │   └── login.html            # Login page
 │   ├── css/
+│   │   └── styles.css            # Dark theme (pink/black/red)
 │   └── js/
-├── libs/             # Dependencies (Crow, SQLiteCpp, nlohmann/json)
+│       ├── app.js                # Core: API wrapper, modals, utilities
+│       ├── projects.js           # Project CRUD, archive, listing
+│       └── editor.js             # File editor, tabs, syntax
+├── libs/
+│   ├── crow.h                    # Crow HTTP framework (header-only)
+│   ├── SQLiteCpp/                # SQLite C++ wrapper
+│   └── nlohmann/json.hpp         # JSON library
 ├── Makefile
 ├── Dockerfile
-└── schema.sql
+├── docker-entrypoint.sh          # Init DB, backup, start server
+├── schema.sql                    # Database schema + seed data
+└── config.env                    # Example configuration
 ```
+
+## Development
 
 ### Building
 
 ```bash
-make          # Build
-make clean    # Clean build artifacts
-./project_api config.env  # Run
+make              # Build
+make clean        # Clean build artifacts
+./project_api config.env  # Run with config
 ```
+
+### Dependencies
+
+- **g++** with C++17 support
+- **make**
+- **libasio-dev** (async I/O for Crow)
+- **pthread**
+- SQLite3 headers (bundled via SQLiteCpp)
+
+### Adding New Routes
+
+1. Add handler declaration in `include/routes/api.h` or `webui.h`
+2. Implement in `src/routes/`
+3. Register in the appropriate `registerXRoutes()` function
+4. Add input validation in `security/sanitizer.cpp` if needed
 
 ## License
 
@@ -222,6 +326,6 @@ MIT
 
 ## Credits
 
-- Crow HTTP framework: https://github.com/CrowCpp/Crow
-- SQLiteCpp: https://github.com/SRombauts/SQLiteCpp
-- nlohmann/json: https://github.com/nlohmann/json
+- [Crow](https://github.com/CrowCpp/Crow) — HTTP framework
+- [SQLiteCpp](https://github.com/SRombauts/SQLiteCpp) — SQLite C++ wrapper
+- [nlohmann/json](https://github.com/nlohmann/json) — JSON library
