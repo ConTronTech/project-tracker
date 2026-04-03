@@ -3,11 +3,13 @@
 const Projects = {
     async loadList() {
         const q = document.getElementById('search').value;
-        const url = q ? `/projects?search=${encodeURIComponent(q)}` : '/projects';
+        const showArchived = document.getElementById('showArchived')?.checked;
+        let url = q ? `/projects?search=${encodeURIComponent(q)}` : '/projects';
+        if (showArchived) url += (url.includes('?') ? '&' : '?') + 'status=archived';
         const projects = await App.apiJson(url);
         if (!projects) return;
 
-        const statusOrder = { completed: 0, active: 1, paused: 2, abandoned: 3 };
+        const statusOrder = { completed: 0, active: 1, paused: 2, abandoned: 3, archived: 4 };
         const prioOrder = { high: 0, medium: 1, low: 2 };
         projects.sort((a, b) => {
             const s = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
@@ -39,6 +41,7 @@ const Projects = {
 
         document.getElementById('toolbar').style.display = 'flex';
         document.getElementById('toolbarTitle').textContent = p.name;
+        this.updateArchiveButton(p.status);
 
         const tabs = document.getElementById('tabs');
         tabs.style.display = 'flex';
@@ -133,6 +136,40 @@ const Projects = {
         this.select(App.currentSlug);
     },
 
+    async archive() {
+        if (!App.currentSlug) return;
+        const p = await App.apiJson(`/projects/${App.currentSlug}`);
+        if (!p) return;
+
+        const newStatus = p.status === 'archived' ? 'active' : 'archived';
+        const action = newStatus === 'archived' ? 'Archive' : 'Unarchive';
+        if (!confirm(`${action} ${p.name}?`)) return;
+
+        await App.api(`/projects/${App.currentSlug}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+
+        this.loadList();
+        this.select(App.currentSlug);
+        this.updateArchiveButton(newStatus);
+    },
+
+    updateArchiveButton(status) {
+        const btn = document.getElementById('archiveProjectBtn');
+        if (!btn) return;
+        if (status === 'archived') {
+            btn.textContent = 'Unarchive';
+            btn.classList.add('unarchive');
+            btn.classList.remove('archive');
+        } else {
+            btn.textContent = 'Archive';
+            btn.classList.add('archive');
+            btn.classList.remove('unarchive');
+        }
+    },
+
     async remove() {
         if (!confirm(`Delete ${App.currentSlug} and ALL its files?`)) return;
 
@@ -150,8 +187,10 @@ document.getElementById('search')?.addEventListener('input', () => Projects.load
 document.getElementById('newProjectBtn')?.addEventListener('click', () => App.showModal('newProjectModal'));
 document.getElementById('createProjectBtn')?.addEventListener('click', () => Projects.create());
 document.getElementById('editProjectBtn')?.addEventListener('click', () => Projects.edit());
+document.getElementById('archiveProjectBtn')?.addEventListener('click', () => Projects.archive());
 document.getElementById('saveProjectBtn')?.addEventListener('click', () => Projects.save());
 document.getElementById('deleteProjectBtn')?.addEventListener('click', () => Projects.remove());
+document.getElementById('showArchived')?.addEventListener('change', () => Projects.loadList());
 
 // Initial load
 Projects.loadList();
