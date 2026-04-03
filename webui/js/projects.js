@@ -5,19 +5,16 @@ const Projects = {
         const q = document.getElementById('search').value;
         const showArchived = document.getElementById('showArchived')?.checked;
         
-        // Fetch active projects (default excludes archived)
-        let url = q ? `/projects?search=${encodeURIComponent(q)}` : '/projects';
-        let projects = await App.apiJson(url) || [];
+        // Single request — use status=all when showing archived
+        let url = '/projects';
+        const params = [];
+        if (q) params.push(`search=${encodeURIComponent(q)}`);
+        if (showArchived) params.push('status=all');
+        if (params.length) url += '?' + params.join('&');
         
-        // If show archived, also fetch archived and merge
-        if (showArchived) {
-            let archiveUrl = '/projects?status=archived';
-            if (q) archiveUrl += `&search=${encodeURIComponent(q)}`;
-            const archived = await App.apiJson(archiveUrl) || [];
-            projects = projects.concat(archived);
-        }
+        let projects = await App.apiJson(url) || [];
 
-        const statusOrder = { completed: 0, active: 1, paused: 2, abandoned: 3, archived: 4 };
+        const statusOrder = { active: 0, paused: 1, completed: 2, archived: 3, abandoned: 4 };
         const prioOrder = { high: 0, medium: 1, low: 2 };
         projects.sort((a, b) => {
             const s = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
@@ -177,9 +174,16 @@ const Projects = {
         // Show modal and wait for confirm
         App.showModal('archiveModal');
 
-        // Set up one-time click handler for confirm
-        const confirmHandler = async () => {
+        // Cleanup function to remove all handlers
+        const cleanup = () => {
             btn.removeEventListener('click', confirmHandler);
+            cancelBtn.removeEventListener('click', cancelHandler);
+        };
+
+        const cancelBtn = document.querySelector('[data-close="archiveModal"]');
+
+        const confirmHandler = async () => {
+            cleanup();
             App.closeModal('archiveModal');
 
             await App.api(`/projects/${App.currentSlug}`, {
@@ -197,7 +201,11 @@ const Projects = {
             this.select(App.currentSlug);
             this.updateArchiveButton(newStatus);
         };
+
+        const cancelHandler = () => cleanup();
+
         btn.addEventListener('click', confirmHandler);
+        cancelBtn.addEventListener('click', cancelHandler);
     },
 
     updateArchiveButton(status) {

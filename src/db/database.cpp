@@ -95,12 +95,12 @@ std::vector<Project> ProjectDB::getAll(const std::string& search,
             params.push_back(term);
         }
 
-        if (!status.empty()) {
+        if (!status.empty() && status != "all") {
             sql += " AND p.status = ?";
             params.push_back(status);
-        } else {
+        } else if (status != "all") {
             // By default, exclude archived projects from listings
-            // Use ?status=archived to explicitly list them
+            // Use ?status=all to include everything, ?status=archived for only archived
             sql += " AND p.status != 'archived'";
         }
 
