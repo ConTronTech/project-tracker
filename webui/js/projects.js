@@ -4,10 +4,18 @@ const Projects = {
     async loadList() {
         const q = document.getElementById('search').value;
         const showArchived = document.getElementById('showArchived')?.checked;
+        
+        // Fetch active projects (default excludes archived)
         let url = q ? `/projects?search=${encodeURIComponent(q)}` : '/projects';
-        if (showArchived) url += (url.includes('?') ? '&' : '?') + 'status=archived';
-        const projects = await App.apiJson(url);
-        if (!projects) return;
+        let projects = await App.apiJson(url) || [];
+        
+        // If show archived, also fetch archived and merge
+        if (showArchived) {
+            let archiveUrl = '/projects?status=archived';
+            if (q) archiveUrl += `&search=${encodeURIComponent(q)}`;
+            const archived = await App.apiJson(archiveUrl) || [];
+            projects = projects.concat(archived);
+        }
 
         const statusOrder = { completed: 0, active: 1, paused: 2, abandoned: 3, archived: 4 };
         const prioOrder = { high: 0, medium: 1, low: 2 };
@@ -150,6 +158,12 @@ const Projects = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: newStatus })
         });
+
+        // If we just archived and the toggle is off, enable it so user can still see the project
+        if (newStatus === 'archived') {
+            const toggle = document.getElementById('showArchived');
+            if (toggle && !toggle.checked) toggle.checked = true;
+        }
 
         this.loadList();
         this.select(App.currentSlug);
