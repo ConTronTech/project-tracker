@@ -29,7 +29,7 @@ const Projects = {
             ).join('') : '';
             return `
             <div class="project-item ${p.slug === App.currentSlug ? 'active' : ''}"
-                 onclick="Projects.select('${App.escapeHtml(p.slug)}')">
+                 data-action="select-project" data-slug="${App.escapeHtml(p.slug)}">
                 <div class="name">${App.escapeHtml(p.name)} <span class="badge ${p.status}">${p.status}</span></div>
                 <div class="meta"><div class="tag-row">${tags}</div><span class="file-count">${p.file_count} files</span></div>
             </div>`;
@@ -50,8 +50,8 @@ const Projects = {
 
         const tabs = document.getElementById('tabs');
         tabs.style.display = 'flex';
-        tabs.innerHTML = `<div class="tab active" onclick="Projects.showInfo('${slug}')">Info</div>` +
-            p.files.map(f => `<div class="tab" onclick="Editor.openFile('${slug}','${App.escapeHtml(f.filename)}')">${App.escapeHtml(f.filename)}</div>`).join('');
+        tabs.innerHTML = `<div class="tab active" data-action="show-info" data-slug="${slug}">Info</div>` +
+            p.files.map(f => `<div class="tab" data-action="open-file" data-slug="${slug}" data-file="${App.escapeHtml(f.filename)}">${App.escapeHtml(f.filename)}</div>`).join('');
 
         this.showInfo(slug);
     },
@@ -75,7 +75,7 @@ const Projects = {
             <h3 class="files-heading">Files (${p.files.length})</h3>
             <div class="file-list">
             ${p.files.map(f => `
-                <div class="file-item" onclick="Editor.openFile('${slug}','${App.escapeHtml(f.filename)}')">
+                <div class="file-item" data-action="open-file" data-slug="${slug}" data-file="${App.escapeHtml(f.filename)}">
                     <span class="fname">${App.escapeHtml(f.filename)}</span>
                     <span class="fsize">${f.size} bytes · ${App.escapeHtml(f.updated_at)}</span>
                 </div>

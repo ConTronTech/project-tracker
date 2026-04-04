@@ -56,8 +56,24 @@ const App = {
     }
 };
 
-// Close modals via cancel buttons
+// Global event delegation for data-action clicks (CSP-safe, no inline handlers)
 document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (el) {
+        const action = el.dataset.action;
+        const slug = el.dataset.slug;
+        const file = el.dataset.file;
+        switch (action) {
+            case 'select-project': Projects.select(slug); break;
+            case 'show-info': Projects.showInfo(slug); break;
+            case 'open-file': Editor.openFile(slug, file); break;
+            case 'save-file': Editor.saveFile(); break;
+            case 'download-file': Editor.downloadFile(slug, file); break;
+            case 'delete-file': Editor.deleteFile(slug, file); break;
+        }
+    }
+
+    // Close modals via cancel buttons
     if (e.target.dataset.close) {
         App.closeModal(e.target.dataset.close);
     }

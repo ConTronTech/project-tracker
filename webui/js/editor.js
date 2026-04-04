@@ -14,9 +14,9 @@ const Editor = {
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <span style="font-size:13px;color:#8a6b78">${App.escapeHtml(filename)}</span>
                 <div class="file-actions">
-                    <button class="btn-save" onclick="Editor.saveFile()">Save</button>
-                    <button class="btn-download" onclick="Editor.downloadFile('${slug}','${App.escapeHtml(filename)}')">Download</button>
-                    <button class="btn-delete" onclick="Editor.deleteFile('${slug}','${App.escapeHtml(filename)}')">Delete</button>
+                    <button class="btn-save" data-action="save-file">Save</button>
+                    <button class="btn-download" data-action="download-file" data-slug="${slug}" data-file="${App.escapeHtml(filename)}">Download</button>
+                    <button class="btn-delete" data-action="delete-file" data-slug="${slug}" data-file="${App.escapeHtml(filename)}">Delete</button>
                 </div>
             </div>
             <textarea class="editor" id="editor">${App.escapeHtml(text)}</textarea>

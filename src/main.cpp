@@ -127,7 +127,8 @@ int main(int argc, char* argv[]) {
         // ============================================
         // 9. Initialize database
         // ============================================
-        ProjectDB db("data/projects.db");
+        std::string db_path = config.get("env", "DB_PATH", "/data/projects.db");
+        ProjectDB db(db_path);
 
         // ============================================
         // 10. Register routes
